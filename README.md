@@ -123,6 +123,6 @@ Please rate this repository by giving it a star rating in the top right corner o
 
 ## 📄 **License**
 
-This repository is licensed under GNU GENERAL PUBLIC LICENSE.
+This repository is licensed under Apache Licence 2.0.
 
 Made with ❤️ by NightStrang6r
