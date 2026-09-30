@@ -60,6 +60,32 @@
 pip install fragment-api-lib
 ```
 
+## 🔐 **API v3: your seed never leaves your machine**
+
+API v1/v2 send your wallet's mnemonic to the server, which signs your payments. v3 does not:
+the server prepares each payment, this library checks it and signs it locally, the server
+relays and confirms it. v1/v2 are deprecated.
+
+```python
+from fragment_api_lib.v3 import FragmentAPIv3
+
+api = FragmentAPIv3(
+    mnemonic=os.environ["TON_SEED"],              # used only here, never sent
+    wallet_type="v5r1",                           # the wallet you actually use: "v4r2" or "v5r1"
+    fragment_cookies=os.environ["FRAGMENT_COOKIES"],  # for KYC orders (your Fragment account)
+    trust={"max_ton_per_order": 50, "max_usdt_per_order": 200},  # refuse to sign anything bigger
+)
+result = api.buy("stars", "durov", 50, idempotency_key="shop:123")
+```
+
+Before signing, the library refuses any payment that is not to Fragment (addresses pinned
+here), to the operator's fee / no-KYC wallet, within the fee ceiling (default 5 %) and your
+caps - so even a compromised server can not make it sign something else.
+
+To survive a crash between signing and hearing back: `p = api.prepare([order])`, store `p`,
+then `api.submit(p)`. Submitting the same prepared payment again is always safe. Never
+re-sign an order whose result was `TRANSFER_AMBIGUOUS` - check it first.
+
 ## ☑️ **Usage examples**
 
 ```python
