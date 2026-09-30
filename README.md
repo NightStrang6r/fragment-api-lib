@@ -3,7 +3,7 @@
 </h1>
 
 <h4 align="center">
-    ✨ Simple Python library for fast integration with Fragment (<a href="https://fragment.com">fragment.com</a>) ✨
+    ✨ Python library for buying Telegram Stars, Premium and TON on Fragment (<a href="https://fragment.com">fragment.com</a>) ✨
 </h4>
 
 <p align="center">
@@ -16,43 +16,43 @@
 
 ## 🚀 **Info**
 
-**fragment-api-lib** is a simple API client wrapper for Fragment, which uses fragment-api.net under the hood. It supports:
+**fragment-api-lib** is the Python client for [Fragment API](https://fragment-api.net).
+Since version 1.1.0 it speaks **API v3**: the server prepares each payment, this library
+checks it and **signs it on your machine** - your seed phrase is never sent anywhere.
 
-- 💸 **Purchase Telegram Stars & Premium**
+- 💸 Buy **Telegram Stars**, **Premium** and **TON** for any username
+
+- 🔐 **Your seed stays with you** - payments are signed locally
+
+- 🛡️ Checks every payment before signing: pinned Fragment addresses, a fee ceiling, your own limits
 
 - 💵 Pay in **TON** or **USDT** (jettons on TON)
 
-- ♻️ **Idempotent** order creation — safe retries, no double-paying
-
 - ✅ Works **with** or **without** KYC
 
-- 🔂 Bypass Fragment **purchase limits**
+- 📦 Many orders in **one transaction** (up to 127 from a W5 wallet)
 
-- 🔐 **End-to-end encryption** supported
+- ♻️ **Idempotent** order creation - safe retries, never a double purchase
 
-- 🧩 No **API key** or registration required
+- 🧩 No **API key** or registration: you sign in with your wallet
 
 - 💙 No need to use the **TON API** directly
 
-- 📦 Built-in request models for **clean integration**
+## 📌 **Requirements**
 
-- 📈 Supports **multi-order transactions**
+- ✅ Python 3.8+
 
-- 🧠 Lightweight & **developer-friendly**
+- ✅ A TON wallet **v4r2** or **W5 (v5r1)** and its 24-word seed phrase, with TON on it (and USDT to pay in USDT). A brand-new wallet is fine: the first payment deploys it.
 
-## 📌 **Requirements (without KYC)**
+**With KYC** (your own Fragment account):
 
-- ✅ TON Wallet v4r2 🪙
+- ✅ Fragment account with linked TON wallet and Telegram account, KYC-verified 🆔
 
-- ✅ TON Wallet should be Active (send any transaction from it) 🪙
+- ✅ Fragment cookies 🍪 - export them with the [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm) extension as "Header String"
 
-## 📌 **Requirements (with KYC)**
+- ✅ USDT orders must be paid from the wallet linked to that Fragment account
 
-- ✅ Fragment account with linked TON wallet and Telegram account 🔗
-
-- ✅ KYC verification on Fragment 🆔
-
-- ✅ Export cookies from Fragment 🍪 (as Header String using Cookie Editor extension)
+**Without KYC** nothing else is needed: the order is bought through the service's verified account.
 
 ## ➕ **Installation**
 
@@ -60,168 +60,246 @@
 pip install fragment-api-lib
 ```
 
-## 🔐 **API v3: your seed never leaves your machine**
+It brings `requests` and `PyNaCl` (for signing).
 
-API v1/v2 send your wallet's mnemonic to the server, which signs your payments. v3 does not:
-the server prepares each payment, this library checks it and signs it locally, the server
-relays and confirms it. v1/v2 are deprecated.
+## ⚡ **Quick start**
 
 ```python
+import os
 from fragment_api_lib.v3 import FragmentAPIv3
 
 api = FragmentAPIv3(
-    mnemonic=os.environ["TON_SEED"],              # used only here, never sent
-    wallet_type="v5r1",                           # the wallet you actually use: "v4r2" or "v5r1"
-    fragment_cookies=os.environ["FRAGMENT_COOKIES"],  # for KYC orders (your Fragment account)
-    trust={"max_ton_per_order": 50, "max_usdt_per_order": 200},  # refuse to sign anything bigger
+    mnemonic=os.environ["TON_SEED"],                  # 24 words - used here to sign, never sent
+    wallet_type="v5r1",                               # your wallet: "v4r2" (default) or "v5r1" (W5)
+    fragment_cookies=os.environ["FRAGMENT_COOKIES"],  # your Fragment account; not needed without KYC
+    trust={"max_ton_per_order": 50},                  # refuse to sign any order above 50 TON
 )
-result = api.buy("stars", "durov", 50, idempotency_key="shop:123")
+
+print("Paying from", api.address)                     # must be your wallet's address
+
+result = api.buy("stars", "durov", 50, idempotency_key="myshop:1001")  # a retry never buys twice
+
+print(result["success"], result["orders"][0]["ref_id"], result.get("transaction_hash"))
 ```
 
-Before signing, the library refuses any payment that is not to Fragment (addresses pinned
-here), to the operator's fee / no-KYC wallet, within the fee ceiling (default 5 %) and your
-caps - so even a compromised server can not make it sign something else.
+Keep the seed phrase and cookies out of your code (environment variables, a secrets
+manager). Check that `api.address` is your wallet: a wrong `wallet_type` gives a different
+address, and payments would be signed for an empty wallet.
 
-To survive a crash between signing and hearing back: `p = api.prepare([order])`, store `p`,
-then `api.submit(p)`. Submitting the same prepared payment again is always safe. Never
-re-sign an order whose result was `TRANSFER_AMBIGUOUS` - check it first.
+## 🔐 **How it works**
 
-## ☑️ **Usage examples**
+1. **Sign in** - `auth()` proves you own the wallet with a TON Connect `ton_proof`
+   signature and gets an auth key. It runs by itself on the first call.
+2. **Create the order** - the server finds the recipient on Fragment, gets the invoice and
+   returns a payment request: what to send, to whom, until when.
+3. **Check and sign** - this library checks the request (below) and signs it with your key.
+4. **Submit** - the server verifies the signed message, sends it to the TON network and
+   confirms it on chain.
+
+## 🛡️ **What is checked before signing**
+
+The server no longer holds your seed, but it still says what to sign - so nothing is
+signed blindly:
+
+- the payment is from your wallet, and has exactly the legs the order needs: Fragment's
+  (plus the service fee) with KYC, one payment to the service's wallet without KYC;
+- **Fragment's leg** goes to a Fragment address **pinned in this library** - never one the
+  server names. For USDT the jetton recipient is checked, and the unused gas must come
+  back to you;
+- the **fee leg** and the **no-KYC leg** go only to the service wallets you trust;
+- the fee is at most `max_fee_percent` (5 %) of the purchase;
+- the order stays under your `max_ton_per_order` / `max_usdt_per_order`;
+- the signed message expires within 2 minutes (`external_ttl_seconds`).
+
+A payment that fails any check raises `FragmentAPIError` with `error_code`
+`UNTRUSTED_PAYMENT`, and nothing is sent.
+
+By default the service wallets come from `/v3/config` when the client starts. For the
+strictest setup, pin them yourself and turn that off:
 
 ```python
-from fragment_api_lib.client import FragmentAPIClient
-from fragment_api_lib.models import *
-
-# Replace with your 24 words seed phrase from TON v4r2 Wallet
-seed = "your_24_words_seed_phrase"
-
-# Replace with your Fragment cookies exported from Cookie-Editor extension as Header String
-# https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekhgcdicdfddnkalmdm
-fragment_cookies = "your_fragment_cookies"
-
-client = FragmentAPIClient(seed=seed, fragment_cookies=fragment_cookies, wallet_type="v4r2")
-
-# Ping
-print("API ping:", client.ping())
-
-# Get balance
-res = client.get_balance(seed=seed)
-print("Balance:", res)
-
-# Get user info
-res = client.get_user_info(
-    username="NightStrang6r", # or "@NightStrang6r", or "https://t.me/NightStrang6r"
-    fragment_cookies=fragment_cookies
+api = FragmentAPIv3(
+    mnemonic=mnemonic, wallet_type="v5r1", fragment_cookies=cookies,
+    trust={
+        "trust_server_config": False,
+        "fee_wallets": ["UQ..."],       # the fee wallet, from the operator
+        "middle_wallets": ["UQ..."],    # the no-KYC wallet, from the operator
+        "max_ton_per_order": 50,
+        "max_usdt_per_order": 200,
+    },
 )
-print("User info:", res)
-
-# Buy stars without KYC
-res = client.buy_stars_without_kyc(
-    username="NightStrang6r", # or "@NightStrang6r", or "https://t.me/NightStrang6r"
-    amount=100,
-    seed=seed
-)
-print("Buy stars without KYC response:", res)
-
-# Buy stars, paying in TON
-res = client.buy_stars(
-    username="NightStrang6r", # or "@NightStrang6r", or "https://t.me/NightStrang6r"
-    amount=100,
-    show_sender=False,
-    fragment_cookies=fragment_cookies,
-    seed=seed
-)
-print("Buy stars response:", res)
-
-# Buy stars, paying in USDT (jettons on TON)
-res = client.buy_stars(
-    username="NightStrang6r",
-    amount=100,
-    payment_method="usdt_ton",
-    custom_order_info="my-order-42",
-    idempotency_key="myshop:42",
-    fragment_cookies=fragment_cookies,
-    seed=seed
-)
-print("Buy stars for USDT response:", res)
-
-# Buy Telegram Premium without KYC
-res = client.buy_premium_without_kyc(
-    username="NightStrang6r", # or "@NightStrang6r", or "https://t.me/NightStrang6r"
-    duration=3, # 3 or 6 or 12 months
-    seed=seed
-)
-print("Buy Telegram Premium without KYC response:", res)
-
-# Buy Telegram Premium, paying in USDT
-res = client.buy_premium(
-    username="NightStrang6r", # or "@NightStrang6r", or "https://t.me/NightStrang6r"
-    duration=3, # 3 or 6 or 12 months
-    show_sender=False,
-    payment_method="usdt_ton",
-    idempotency_key="myshop:43",
-    fragment_cookies=fragment_cookies,
-    seed=seed
-)
-print("Buy Telegram Premium response:", res)
 ```
 
-## 💵 **Paying in USDT**
+## 📚 **API**
 
-Pass `payment_method="usdt_ton"` to settle an order in USDT jettons on TON instead of
-native TON. Anything other than `"ton"` or `"usdt_ton"` raises `FragmentAPIError`
-before a request is sent. Your wallet still needs a small amount of **TON for gas** on
-top of the USDT balance.
+### `FragmentAPIv3(...)`
 
-`payment_method`, `custom_order_info` and `idempotency_key` only exist on the v2
-create+pay endpoints, so passing any of them switches `buy_stars` / `buy_premium` /
-`buy_*_without_kyc` to the v2 flow (an auth key is minted from your cookies + seed
-automatically). Omit them and the legacy single-call endpoint is used exactly as before.
+| Argument | Default | |
+|---|---|---|
+| `mnemonic` | - | 24 words. Only used to sign here |
+| `wallet_type` | `"v4r2"` | `"v4r2"` or `"v5r1"` (W5) |
+| `fragment_cookies` | `None` | Needed for KYC orders |
+| `base_url` | `https://api.fragment-api.net` | |
+| `trust` | `{}` | `fragment_addresses` (added to the pinned ones), `fee_wallets`, `middle_wallets`, `trust_server_config` (`True`), `max_fee_percent` (`5`), `max_ton_per_order`, `max_usdt_per_order` |
+| `external_ttl_seconds` | `120` | How long a signed payment stays valid (max 300) |
+| `timeout` | `None` | HTTP timeout. `None` waits for the answer, which is what you want while a payment is being confirmed |
 
-| Method | `custom_order_info` | `payment_method` | `idempotency_key` |
-|---|---|---|---|
-| `buy_stars` / `create_stars_order` | ✅ | ✅ | ✅ |
-| `buy_premium` / `create_premium_order` | ✅ | ✅ | ✅ |
-| `buy_ton` / `create_ton_order` | ✅ | ✅ | ✅ |
-| `buy_stars_without_kyc` / `create_stars_without_kyc_order` | ✅ | ✅ | ❌ |
-| `buy_premium_without_kyc` / `create_premium_without_kyc_order` | ✅ | ✅ | ❌ |
-| `buy_ton_without_kyc` / `create_ton_without_kyc_order` | ✅ | ✅ | ❌ |
+### Methods
 
-No-KYC USDT orders settle in two legs: your wallet sends USDT to the service's middle
-wallet, which then pays Fragment. Your wallet still needs a little TON for the jetton
-leg's gas. The legacy v1 single-call endpoints remain TON-only, so passing
-`payment_method="usdt_ton"` to `buy_*_without_kyc` routes the call through v2.
+| Method | Returns |
+|---|---|
+| `buy(product, username, amount, **order)` | Creates and pays one order |
+| `create_order(product, username, amount, **order)` | `{"order", "payment", "recipient_id"}` - nothing is paid yet |
+| `check_order(created)` | Runs the checks above for one order without signing |
+| `pay_orders([created, ...])` | Pays several orders with one transaction |
+| `prepare([created, ...])` | A signed payment `{"orders", "boc", "normalized_hash", "valid_until"}`, not sent yet |
+| `submit(prepared, created=None)` | Sends a prepared payment and waits for the result |
+| `get_order(order_id)` | `{"order", "payment"}` |
+| `list_orders(limit=10, offset=0)` | Your orders, newest first |
+| `user_info(username)` | Looks a Telegram user up on Fragment |
+| `wallet_info()` | `{"address", "state", "seqno", "balance_nano", "usdt_raw", ...}` |
+| `config()` | The service's network, wallets and fees |
+| `address` | Your wallet address (`UQ...`) |
 
-## ♻️ **Idempotency**
+Order arguments:
 
-`idempotency_key` makes order creation safe to retry: repeating a create with the same
-key returns the **same** order instead of creating a new one, so a network hiccup on
-your side cannot turn into two paid orders. Namespace it to your system, e.g.
-`"myshop:12345"` (max 200 chars).
+| Argument | |
+|---|---|
+| `product` | `"stars"`, `"premium"` or `"ton"` |
+| `username` | Telegram username: `durov`, `@durov` or `https://t.me/durov` |
+| `amount` | Stars (min 50), TON (min 1), or Premium months (3, 6, 12) |
+| `kyc` | `True` (default): your Fragment account. `False`: bought through the service |
+| `payment_method` | `"ton"` (default) or `"usdt_ton"` |
+| `show_sender` | Show you as the sender (default `True`) |
+| `idempotency_key` | Your id for the order, e.g. `"myshop:1001"` - strongly recommended |
+| `custom_order_info` | Any note for your own reference |
 
-## 🔧 **Driving orders yourself (create → pay → check)**
+A successful payment returns:
 
 ```python
-client.auth(fragment_cookies=fragment_cookies, seed=seed)
-
-created = client.create_stars_order(
-    username="NightStrang6r",
-    amount=100,
-    payment_method="usdt_ton",
-    idempotency_key="myshop:44"
-)
-
-paid = client.pay_order("buyStars", order_uuid=created["order_id"], cost=created["cost"])
-
-status = client.check_order("buyStars", created["order_id"])
+{
+    "success": True,
+    "message": "Payment completed",
+    "transaction_hash": "…",
+    "orders": [{"id": ..., "ref_id": ..., "status": "success", "product": ..., "amount": ...,
+                "username": ..., "cost": ..., "currency": ..., "txid": ..., ...}],
+}
 ```
 
-`pay_order` / `check_order` take the product as their first argument: `buyStars`,
-`buyStarsWithoutKYC`, `buyPremium`, `buyPremiumWithoutKYC`, `buyTon` or
-`buyTonWithoutKYC`.
+## ☑️ **Examples**
 
-> ⚠️ If a pay call fails with a network error, **poll `check_order` instead of retrying**.
-> A blind retry can pay the same order twice.
+Runnable versions of all of these: [example.py](https://github.com/NightStrang6r/fragment-api-lib/blob/main/example.py).
+
+### Premium without KYC
+
+No Fragment account, no cookies:
+
+```python
+api = FragmentAPIv3(mnemonic=os.environ["TON_SEED"], wallet_type="v5r1")
+
+api.buy("premium", "durov", 3, kyc=False)
+```
+
+### Pay in USDT
+
+```python
+api.buy("stars", "durov", 500, payment_method="usdt_ton")
+```
+
+Keep a little TON on the wallet as well: every USDT transfer carries some TON for gas,
+and what is not used comes back.
+
+### Many orders in one transaction
+
+```python
+orders = []
+for username in ["alice", "bob", "carol"]:
+    created = api.create_order("stars", username, 50, idempotency_key=f"myshop:{username}:50")
+    api.check_order(created)        # a bad order is refused alone, not with the batch
+    orders.append(created)
+
+result = api.pay_orders(orders)
+```
+
+One transaction carries up to 255 messages from a W5 wallet (4 from v4r2). A KYC order
+usually takes two (Fragment and the fee), a no-KYC order one. Each signed payment uses
+the wallet's next seqno, so pay from one wallet one payment at a time: batch concurrent
+orders together, or queue them.
+
+### Surviving a crash
+
+Store the signed payment before sending it. Sending the same signed payment again is
+always safe: it can be applied only once.
+
+```python
+created = api.create_order("stars", "durov", 50, idempotency_key="myshop:1002")
+prepared = api.prepare([created])
+db.save("payment:myshop:1002", prepared)       # your storage
+
+result = api.submit(prepared, [created])
+
+# After a restart, with the same prepared payment:
+# api.submit(db.load("payment:myshop:1002"))
+```
+
+## ⚠️ **Errors**
+
+Failures raise `fragment_api_lib.exceptions.FragmentAPIError`. Besides the message it
+carries `error_code`, and for answers from the server `status` and `details` (the whole
+answer). The ones to handle:
+
+| `error_code` | What happened | What to do |
+|---|---|---|
+| `UNTRUSTED_PAYMENT` | This library refused to sign | Nothing was sent. Check your `trust` settings |
+| `INSUFFICIENT_BALANCE` | Not enough TON / USDT | Nothing was sent. Top up and pay again |
+| `ORDER_EXPIRED` | Fragment's invoice expired | Create the order again (same `idempotency_key` is fine) |
+| `TRANSFER_FAILED` | The network rejected the payment | See `details["orders"]` |
+| `TRANSFER_AMBIGUOUS` | The result is not known yet | The order stays `processing`. **Do not pay it again** - check it later with `get_order` |
+| `SUBMIT_OUTCOME_UNKNOWN` | No answer from the API | Submit the same `details["prepared"]` again later. **Never sign it anew** |
+| `FRAGMENT_COOKIES_REQUIRED` | A KYC order without cookies | Pass `fragment_cookies`, or use `kyc=False` |
+| `WALLET_NOT_CONNECTED_TO_FRAGMENT` | USDT from another wallet | Pay USDT orders from the wallet linked to your Fragment account |
+| `NO_KYC_UNAVAILABLE` | No-KYC purchases are paused | Try later |
+
+```python
+from fragment_api_lib.exceptions import FragmentAPIError
+
+try:
+    api.buy("stars", "durov", 50, idempotency_key="myshop:1003")
+except FragmentAPIError as e:
+    code = getattr(e, "error_code", None)
+    if code in ("TRANSFER_AMBIGUOUS", "SUBMIT_OUTCOME_UNKNOWN"):
+        pass  # money may have left the wallet: reconcile, never re-buy
+    else:
+        print(code, e)
+```
+
+## 🔁 **Migrating from API v2**
+
+v1 and v2 send your seed phrase to the server. They are deprecated and will be switched
+off - move to `FragmentAPIv3`:
+
+| v2 (`FragmentAPIClient`) | v3 (`FragmentAPIv3`) |
+|---|---|
+| `FragmentAPIClient(seed=..., fragment_cookies=..., wallet_type=...)` | `FragmentAPIv3(mnemonic=..., wallet_type=..., fragment_cookies=...)` |
+| `buy_stars(username=..., amount=..., show_sender=..., payment_method=..., custom_order_info=..., idempotency_key=...)` | `buy("stars", username, amount, show_sender=..., payment_method=..., custom_order_info=..., idempotency_key=...)` |
+| `buy_stars_without_kyc(username=..., amount=..., seed=...)` | `buy("stars", username, amount, kyc=False)` |
+| `buy_premium(username=..., duration=...)` | `buy("premium", username, months)` |
+| `buy_ton(...)` | `buy("ton", username, amount)` |
+| `create_stars_order(...)` → `pay_order("buyStars", ...)` → `check_order("buyStars", order_id)` | `create_order("stars", ...)` → `pay_orders([created])` → `get_order(order_id)` |
+| `get_user_info(username=...)` | `user_info(username)` |
+| `get_balance(seed=...)` | `wallet_info()` |
+
+Note that `check_order` means something else in v3: it checks an order before signing.
+The order's status comes from `get_order`.
+
+With the same wallet, v3 sees the orders and idempotency keys you made in v2, so an order
+bought through v2 can not be bought again through v3.
+
+## 🗄️ **Legacy API v2 client**
+
+`fragment_api_lib.client.FragmentAPIClient` is the v2 client, unchanged, kept for
+existing integrations until v2 is switched off. **It sends your seed phrase to the
+server** - do not start new projects on it.
 
 ## 🎉 **Like it? Star it!**
 
