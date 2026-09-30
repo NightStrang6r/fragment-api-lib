@@ -1,0 +1,32 @@
+{
+ "master": "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+ "code_boc_hex": "b5ee9c72010101010023000842028f452d7a4dfd74066b682365177259ed05734435be76b5fd4bd5d8af2b7c3d68",
+ "cases": [
+  {
+   "owner": "0:9ce8ea90a1cf3e9181bda1cd77ec82245d205d709ee306361d30599fd6de9625",
+   "usdt_wallet": "0:9d966637119acc3186d2c4cefe732106c2ab3afa17a90322d3b05b03877cc5e7",
+   "source": "chain"
+  },
+  {
+   "owner": "0:852443f8599fe6a5da34fe43049ac4e0beb3071bb2bfb56635ea9421287c283a",
+   "usdt_wallet": "0:32081d54752b9340a75c777a94af0483f07329dd296eb4f915bb45e477b93f8a",
+   "source": "chain"
+  },
+  {
+   "owner": "0:0e90b95f4f215552f9d4f5364fe46c519c2326e0d9ac4ed97f8fb531363da50d",
+   "usdt_wallet": "0:cfc378d81b3d09c80eeb712878ae5efdd713301d4015853be54fb73cce3e45fe"
+  },
+  {
+   "owner": "0:18853ea634d9ed414a74c4cd7d39f52aa7d2102c786c23769cb8a1b5936f3de4",
+   "usdt_wallet": "0:4394ca9275948cad06b77835c7b166699029af8754beb7d09fe7bb9c98e1c3d9"
+  },
+  {
+   "owner": "0:9ce8ea90a1cf3e9181bda1cd77ec82245d205d709ee306361d30599fd6de9625",
+   "usdt_wallet": "0:9d966637119acc3186d2c4cefe732106c2ab3afa17a90322d3b05b03877cc5e7"
+  },
+  {
+   "owner": "0:ccad677972e8f20741696f57ad124b27ee4334ca59b09610f732042e94e5603a",
+   "usdt_wallet": "0:bb91a9181736f5bcce64aece2c86b0434d3a5610f95a13f85f917f488819675f"
+  }
+ ]
+}

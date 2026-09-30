@@ -307,6 +307,21 @@ def parse_boc(data):
     return [built[r] for r in roots]
 
 
+class _LibraryCell(Cell):
+    """A library cell (exotic, type 2): code published on chain, referenced by its hash.
+    Only hashed here, never serialized - USDT's jetton wallet code is one (payment.py)."""
+    __slots__ = ()
+
+    def descriptors(self):
+        return 8, 66   # no refs, exotic, level 0; 264 data bits
+
+
+def library_cell(code_hash):
+    if len(code_hash) != 32:
+        raise ValueError("a library cell holds a 32-byte hash")
+    return _LibraryCell(begin_cell().store_uint(2, 8).store_bytes(code_hash).end_cell().bits)
+
+
 def cell_from_b64(value):
     roots = parse_boc(value)
     if len(roots) != 1:
