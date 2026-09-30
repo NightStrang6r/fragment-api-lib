@@ -16,13 +16,22 @@ from .cell import cell_from_b64
 from .keys import key_pair_from_mnemonic
 from .payment import (FRAGMENT_ADDRESSES, OPERATOR_FEE_WALLETS, OPERATOR_MIDDLE_WALLETS, TrustPolicy,
                       UntrustedPayment, check_payment)
-from .proof import cookies_payload, ton_proof_signature
+from .proof import proof_payload, ton_proof_signature
 from .wallet import MAX_MESSAGES, sign_external, wallet_address
 
 # After its valid_until an external can never be applied; this long past it, no block
 # that could still carry it will come.
 EXPIRY_MARGIN_SECONDS = 30
 USERNAME = re.compile(r"(?:^https?://t\.me/|^@|^)([a-zA-Z0-9_]{5,32})/?$")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+
+
+def _checked_base_url(value):
+    """The API gets the auth key and Fragment cookies: plain HTTP only to this machine (tests)."""
+    url = urlparse(value)
+    if url.scheme != "https" and not (url.scheme == "http" and url.hostname in LOCAL_HOSTS):
+        raise ValueError(f"base_url must be https:// (got {url.scheme}://{url.netloc})")
+    return value.rstrip("/")
 
 
 class _Secrets:
@@ -87,7 +96,7 @@ class FragmentAPIv3:
         key = key_pair_from_mnemonic(mnemonic)
         self._secrets = _Secrets(key, fragment_cookies)
         self.wallet = wallet_address(wallet_type, key.public_key)
-        self.base_url = base_url.rstrip("/")
+        self.base_url = _checked_base_url(base_url)
         self.trust = dict(trust or {})
         self.ttl = min(int(external_ttl_seconds), 300)
         self.timeout = timeout
@@ -122,9 +131,12 @@ class FragmentAPIv3:
         raise err
 
     def auth(self):
+        status, challenge = self._call("GET", "/v3/auth/challenge", auth=False)
+        if status != 200 or not challenge.get("nonce"):
+            self._fail(status, challenge)
         domain = urlparse(self.base_url).hostname
         timestamp = int(time.time())
-        payload = cookies_payload(self._secrets.cookies)
+        payload = proof_payload(str(challenge["nonce"]), self._secrets.cookies)
         signature = ton_proof_signature(self._secrets.key, self.wallet, domain, timestamp, payload)
         status, data = self._call("POST", "/v3/auth", json={
             "public_key": self._secrets.key.public_key.hex(), "wallet_type": self.wallet_type,
@@ -141,6 +153,16 @@ class FragmentAPIv3:
 
     def _ensure_auth(self):
         return self._secrets.auth_key or self.auth()
+
+    def revoke(self):
+        """Revoke the auth key this client holds (e.g. when retiring a machine). The next
+        call signs in again."""
+        if not self._secrets.auth_key:
+            return
+        status, data = self._call("DELETE", "/v3/auth")
+        if status != 200:
+            self._fail(status, data)
+        self._secrets.auth_key = None
 
     def config(self):
         status, data = self._call("GET", "/v3/config", auth=False)

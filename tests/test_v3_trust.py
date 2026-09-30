@@ -64,7 +64,7 @@ for c in usdt_vectors["cases"]:
 check("USDT master constant", Address.parse(USDT_MASTER) == Address.parse(usdt_vectors["master"]))
 
 # --- a mock API that answers like a compromised server -----------------------------------
-state = {"scenario": None, "submits": [], "answers": [], "seqno": 5}
+state = {"scenario": None, "submits": [], "answers": [], "seqno": 5, "nonces": 0, "proof": None, "revoked": 0}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -81,16 +81,26 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path == "/v3/auth/challenge":
+            state["nonces"] += 1
+            return self._send(200, {"success": True, "nonce": f"nonce-{state['nonces']}", "expires_at": 0})
         if path == "/v3/config":
             return self._send(200, {"fee_wallet": EVIL, "middle_wallet": EVIL})
         if path == "/v3/wallet":
             return self._send(200, {"address": PAYER.to_raw(), "state": "active", "seqno": state["seqno"]})
         self._send(404, {})
 
+    def do_DELETE(self):
+        if self.path.split("?")[0] == "/v3/auth":
+            state["revoked"] += 1
+            return self._send(200, {"success": True})
+        self._send(404, {})
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("content-length") or 0)) or b"{}")
         path = self.path.split("?")[0]
         if path == "/v3/auth":
+            state["proof"] = body
             return self._send(200, {"success": True, "auth_key": "k" * 64, "wallet": {"address": PAYER.to_raw()}})
         if path == "/v3/orders":
             return self._send(200, {"success": True, **state["scenario"](body)})
@@ -262,6 +272,21 @@ second = api.prepare([c])
 waited = time.time() - t0
 check("a new seqno waits for the old signature to expire",
       second["seqno"] == 21 and waited >= first["valid_until"] + 29 - t0, f"{waited:.1f} s")
+
+# the proof carries the server's one-time nonce, and binds the cookies
+api = make(CAPS)
+api.auth()
+check("the proof payload carries the challenge nonce",
+      str((state["proof"] or {}).get("proof", {}).get("payload", "")).startswith(f"fragment-api/v3:nonce-{state['nonces']}:"))
+api.revoke()
+check("revoke() deletes the key on the server", state["revoked"] == 1)
+
+# no plain HTTP to anything but this machine
+try:
+    FragmentAPIv3(MNEMONIC, wallet_type="v5r1", base_url="http://api.fragment-api.net", trust=CAPS)
+    check("http:// base URL is refused", False)
+except ValueError as e:
+    check("http:// base URL is refused", "https" in str(e))
 
 server.shutdown()
 print(f"passed {ok}, failed {fail}")

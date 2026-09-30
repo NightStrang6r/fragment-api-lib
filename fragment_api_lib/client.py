@@ -1,20 +1,37 @@
 import requests
 import base64
+import warnings
 from urllib.parse import quote
 from .models import *
 from .exceptions import FragmentAPIError
 
+_warned = False
+
+
+def _warn_v2():
+    """API v2 sends the seed phrase to the server. Said once per process."""
+    global _warned
+    if not _warned:
+        _warned = True
+        warnings.warn("FragmentAPIClient (API v2) sends your seed phrase to the server and is deprecated - "
+                      "use fragment_api_lib.v3.FragmentAPIv3, which signs payments locally.",
+                      DeprecationWarning, stacklevel=3)
+
+
 class FragmentAPIClient:
     def __init__(self, seed: str = None, fragment_cookies: str = None, base_url="https://api.fragment-api.net", auth_key: str = None, wallet_type: str = "v4r2"):
+        if seed:
+            _warn_v2()
         self.base_url = base_url.rstrip("/")
         self.default_seed = seed
         self.default_fragment_cookies = fragment_cookies
         self.auth_key = auth_key
         self.wallet_type = wallet_type
 
-    def _get(self, path):
+    def _get(self, path, auth_key=None):
+        """`auth_key` goes in the Authorization header: a key in a URL ends up in logs."""
         url = f"{self.base_url}{path}"
-        response = requests.get(url)
+        response = requests.get(url, headers={"Authorization": "Bearer " + auth_key} if auth_key else None)
         if not response.ok:
             raise FragmentAPIError(f"{response.status_code} | {response.text}")
         return response.json()
@@ -98,6 +115,7 @@ class FragmentAPIClient:
 
     def auth(self, fragment_cookies: str = None, seed: str = None):
         """Create a v2 auth key and remember it on the client."""
+        _warn_v2()
         req = CreateAuthKeyRequest(
             fragment_cookies=self._resolve_fragment_cookies(fragment_cookies),
             seed=self._resolve_seed(seed)
@@ -114,7 +132,7 @@ class FragmentAPIClient:
         return self._post("/getBalance", {"seed": self._get_seed(seed)})
 
     def get_balance_v2(self, auth_key: str = None, wallet_type: str = None):
-        return self._get(f"/v2/getBalance?auth_key={quote(self._get_auth_key(auth_key))}&wallet_type={quote(wallet_type or self.wallet_type)}")
+        return self._get(f"/v2/getBalance?wallet_type={quote(wallet_type or self.wallet_type)}", self._get_auth_key(auth_key))
 
     def get_user_info(self, username: str, fragment_cookies: str = None):
         data = {"username": username}
@@ -122,7 +140,7 @@ class FragmentAPIClient:
         return self._post("/getUserInfo", data)
 
     def get_user_info_v2(self, username: str, auth_key: str = None):
-        return self._get(f"/v2/getUserInfo?username={quote(username)}&auth_key={quote(self._get_auth_key(auth_key))}")
+        return self._get(f"/v2/getUserInfo?username={quote(username)}", self._get_auth_key(auth_key))
 
     def buy_stars(self, username: str, amount: int, show_sender: bool = False, fragment_cookies: str = None, seed: str = None,
                   payment_method: str = None, custom_order_info: str = None, idempotency_key: str = None, wallet_type: str = None):

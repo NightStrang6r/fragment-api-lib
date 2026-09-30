@@ -2,9 +2,11 @@
 import hashlib
 
 
-def cookies_payload(fragment_cookies):
+def proof_payload(nonce, fragment_cookies):
+    """"fragment-api/v3:" + the one-time nonce from /v3/auth/challenge + ":" + sha256 hex of
+    the cookies sent with the proof (or nothing): binds the proof to that nonce and those cookies."""
     digest = hashlib.sha256(fragment_cookies.encode()).hexdigest() if fragment_cookies else ""
-    return "fragment-api/v3:" + digest
+    return f"fragment-api/v3:{nonce}:{digest}"
 
 
 def ton_proof_signature(key_pair, wallet, domain, timestamp, payload):
