@@ -124,7 +124,16 @@ class FragmentAPIv3:
         })
         if status != 200:
             self._fail(status, data)
-        return {"order": data["order"], "payment": data.get("payment")}
+        return {"order": data["order"], "payment": data.get("payment"), "recipient_id": data.get("recipient_id")}
+
+    def check_order(self, created):
+        """The checks prepare() makes, for one order, without signing."""
+        try:
+            check_payment(created["payment"], self.wallet, self._trust_policy(), created["order"].get("kyc") is not False)
+        except (UntrustedPayment, TypeError, KeyError) as e:
+            err = FragmentAPIError(f"Refusing to sign: {e}")
+            err.error_code = "UNTRUSTED_PAYMENT"
+            raise err from None
 
     def _trust_policy(self):
         if self._policy is None:
