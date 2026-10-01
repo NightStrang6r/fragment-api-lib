@@ -287,9 +287,10 @@ off - move to `FragmentAPIv3`:
 Note that `check_order` means something else in v3: it checks an order before signing.
 The order's status comes from `get_order`.
 
-Switch to a **new wallet** as you move: v1 and v2 sent your seed phrase to the server, so
-treat any seed you used with them as exposed. Orders from your old wallet stay under it -
-the operator can link them to your new one on request.
+We recommend a **new wallet** for v3: the old one's seed phrase has already been sent to a
+server, while v3 never lets it leave your machine. Orders from your old wallet stay under
+it - the operator can link them to your new one on request. The full guide:
+https://fragment-api.net/en/api-v3
 
 ## 🗄️ **Legacy API v2 client**
 
