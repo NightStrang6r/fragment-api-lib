@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from fragment_api_lib.v3 import FragmentAPIv3
 from fragment_api_lib.v3.address import Address, load_address, store_address
 from fragment_api_lib.v3.cell import begin_cell, cell_from_b64
-from fragment_api_lib.v3.payment import USDT_MASTER, usdt_wallet_of
+from fragment_api_lib.v3.payment import OPERATOR_FEE_WALLETS, OPERATOR_MIDDLE_WALLETS, USDT_MASTER, usdt_wallet_of
 
 HERE = os.path.dirname(__file__)
 vectors = json.load(open(os.path.join(HERE, "v3_vectors.json")))
@@ -174,6 +174,20 @@ state["scenario"] = lambda b: {"order": order(b), "payment": request([msg("fragm
 refuses("fee wallet named only by /v3/config is refused", lambda: pay(make({"max_ton_per_order": 5})))
 pay(make({"max_ton_per_order": 5, "trust_server_config": True}))
 check("... unless trust_server_config is on", True)
+
+# the service's own wallets are pinned in the release: they need no trust option
+for name, kyc, leg in [
+    ("a fee leg to the pinned fee wallet is signed", True, msg("fee", OPERATOR_FEE_WALLETS[0], 5_000_000, comment("fee"))),
+    ("a no-KYC payment to the pinned middle wallet is signed", False,
+     msg("middle", OPERATOR_MIDDLE_WALLETS[0], 255_000_000, comment("Ref#P"))),
+]:
+    legs = [msg("fragment", FRAGMENT, 250_000_000, comment("Ref#P")), leg] if kyc else [leg]
+    state["scenario"] = lambda b, legs=legs: {"order": order(b), "payment": request(legs)}
+    try:
+        pay(make({"max_ton_per_order": 5}), kyc=kyc)
+        check(name, True)
+    except Exception as e:
+        check(name, False, f"{getattr(e, 'error_code', None)}: {e}")
 
 # an inflated Fragment leg makes 5 % of it the whole wallet: the cap holds
 state["scenario"] = lambda b: {"order": order(b), "payment": request([msg("fragment", FRAGMENT, 100_000_000_000, comment("Ref#6")),

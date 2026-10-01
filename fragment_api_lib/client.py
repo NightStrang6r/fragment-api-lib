@@ -408,4 +408,4 @@ class FragmentAPIClient:
         return self._post("/getOrders", req.__dict__)
 
     def get_orders_v2(self, auth_key: str = None, limit: int = 10, offset: int = 0):
-        return self._get(f"/v2/getOrders?auth_key={quote(self._get_auth_key(auth_key))}&limit={limit}&offset={offset}")
+        return self._get(f"/v2/getOrders?limit={int(limit)}&offset={int(offset)}", self._get_auth_key(auth_key))
